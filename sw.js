@@ -1,17 +1,21 @@
 // Guarda o app no celular para abrir sem internet.
 // Tenta a internet primeiro (para pegar atualizações) e, sem conexão, usa a cópia guardada.
-const CACHE = 'cubo-magico-v1';
+const CACHE = 'cubo-magico-v2';
 
 self.addEventListener('install', e => {
   const arquivos = [
     './', './index.html', './manifest.json',
-    './js/cubo.js', './js/conteudo.js', './js/desenho.js', './js/app.js',
+    './js/cubo.js', './js/conteudo.js', './js/desenho.js', './js/resolver.js', './js/app.js',
     './icone-180.png', './icone-192.png', './icone-512.png', './abertura-iphone14.png',
   ];
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(arquivos)).then(() => self.skipWaiting()));
 });
 
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', e => e.waitUntil(
+  caches.keys()
+    .then(nomes => Promise.all(nomes.filter(n => n !== CACHE).map(n => caches.delete(n))))
+    .then(() => self.clients.claim())
+));
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;

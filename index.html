@@ -351,13 +351,14 @@
       border-top: 1px solid var(--borda);
       padding-bottom: env(safe-area-inset-bottom);
     }
-    .abas div { display: flex; width: 100%; max-width: 560px; }
+    .abas div { display: flex; width: 100%; max-width: 620px; }
     .abas a {
       flex: 1;
       height: var(--barra);
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
       color: var(--texto-3); text-decoration: none;
-      font-size: 11.5px; font-weight: 600;
+      font-size: 11px; font-weight: 600;
+      white-space: nowrap;
     }
     .abas svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
     .abas a[aria-current="page"] { color: var(--amarelo); }
@@ -421,8 +422,8 @@
     .f-F { transform: translateZ(calc(var(--t) / 2)); }
     .f-B { transform: rotateY(180deg) translateZ(calc(var(--t) / 2)); }
     .p-info { min-height: 46px; }
-    #p-contador { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
-    #p-desc { margin: 2px 0 0; color: var(--texto-2); font-size: 14.5px; }
+    .t-contador { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); }
+    .t-desc { margin: 2px 0 0; color: var(--texto-2); font-size: 14.5px; }
     .p-alg { display: flex; flex-wrap: wrap; gap: 6px; max-height: 128px; overflow-y: auto; }
     .lance {
       font: 600 15px/1 var(--mono);
@@ -451,6 +452,88 @@
     .p-extra input { width: 18px; height: 18px; accent-color: var(--amarelo); }
     #p-texto { margin: 0; color: var(--texto-2); font-size: 14.5px; border-top: 1px solid var(--borda); padding-top: 10px; }
 
+
+    /* ---------- meu cubo ---------- */
+    .cubo3d.suave { transition: transform .42s cubic-bezier(.3, .7, .3, 1); }
+    .faces-abas { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -18px; padding: 0 18px 4px; }
+    .faces-abas::-webkit-scrollbar { display: none; }
+    .face-aba {
+      flex: none; display: flex; align-items: center; gap: 7px;
+      padding: 8px 12px; border-radius: 99px;
+      background: var(--cartao-2); border: 1px solid var(--borda);
+      font-weight: 600; font-size: 14.5px; cursor: pointer;
+    }
+    .face-aba i { width: 14px; height: 14px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3); }
+    .face-aba small { color: var(--texto-3); font-size: 12px; font-weight: 600; }
+    .face-aba.completa small { color: var(--verde); }
+    .face-aba[aria-selected="true"] { border-color: var(--amarelo); background: rgba(255, 214, 10, .1); }
+    .como { margin: 12px 0 !important; color: var(--texto-2); font-size: 14.5px; min-height: 44px; }
+    .pintar-area { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: center; }
+    .grade-pintar {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+      padding: 7px; border-radius: 14px; background: #0a0b0e;
+      touch-action: none; user-select: none; -webkit-user-select: none;
+    }
+    .cel {
+      aspect-ratio: 1; border: 0; border-radius: 9px; cursor: pointer;
+      background-image: linear-gradient(140deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, 0) 55%);
+    }
+    .cel.vazia {
+      background: repeating-linear-gradient(45deg, #2a2f3a 0 6px, #232833 6px 12px);
+      box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .12);
+    }
+    .cel:disabled { cursor: default; box-shadow: inset 0 0 0 3px rgba(0, 0, 0, .35); }
+    .m-visor {
+      position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden;
+      background: radial-gradient(circle at 50% 45%, #232936, var(--fundo-2) 70%);
+      touch-action: none; cursor: grab;
+    }
+    .paleta { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 14px 0 8px; }
+    .cor {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 2px; border-radius: 12px; cursor: pointer;
+      background: var(--cartao-2); border: 2px solid transparent;
+      font-size: 12px; font-weight: 600;
+    }
+    .cor i { width: 28px; height: 28px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3); }
+    .cor small { color: var(--texto-3); font: 600 11px/1 var(--mono); }
+    .cor.demais small { color: var(--vermelho); }
+    .cor[aria-checked="true"] { border-color: var(--amarelo); background: rgba(255, 214, 10, .1); }
+    .pintar-botoes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 6px 0 12px; }
+    .pintar-botoes .botao-sec { margin-left: auto; }
+    .botao-sec {
+      border: 1px solid var(--borda-2); background: var(--cartao-2); color: var(--texto);
+      padding: 11px 16px; border-radius: 12px; font-weight: 700; font-size: 15px; cursor: pointer;
+    }
+    .botao-sec:disabled { opacity: .4; cursor: default; }
+    .botao.largo { width: 100%; padding: 15px; font-size: 16.5px; }
+    .m-erro {
+      margin: 0 0 12px !important; padding: 12px 14px; border-radius: 12px;
+      background: rgba(232, 50, 63, .12); border: 1px solid rgba(232, 50, 63, .45); color: #ffd5d8; font-size: 14.5px;
+    }
+    .emb-grande { font-size: 19px; line-height: 1.7; word-spacing: .3em; color: var(--amarelo); margin: 12px 0 !important; }
+    .titulo-linha { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .titulo-linha h2 { margin: 0; }
+    .fases { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 14px 0 10px; counter-reset: fase; }
+    .fases li {
+      counter-increment: fase; font-size: 13px; font-weight: 600; color: var(--texto-3);
+      padding: 6px 10px; border-radius: 99px; background: var(--cartao-2);
+    }
+    .fases li::before { content: counter(fase) ". "; }
+    .fases li.feita { color: var(--verde); }
+    .fases li.feita::before { content: "✓ "; }
+    .fases li.atual { color: var(--fundo); background: var(--amarelo); }
+    .guiado { scroll-margin-top: 12px; }
+    .g-fase { font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-3); margin: 0 0 4px !important; }
+    .guiado h3 { font: 700 19px/1.3 var(--titulo); margin: 0 0 6px; }
+    #g-texto { color: var(--texto-2); }
+    .guiado .tocador { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+    .g-nav { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 16px; }
+    .fim-guiado { text-align: center; scroll-margin-top: 12px; }
+    .fim-cubo svg { width: 110px; height: auto; margin: 4px auto 8px; display: block; }
+    .fim-guiado .pintar-botoes { justify-content: center; }
+    .tocador .visor { max-height: 46vh; }
+    #p-tocador { display: flex; flex-direction: column; gap: 10px; }
     @media (max-width: 560px) {
       .player { align-items: stretch; }
       .player-caixa {
@@ -464,6 +547,9 @@
       .caso-play { width: 30px; height: 30px; }
       .grade, .grade-notacao { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .carta .mini svg { width: 118px; max-width: 100%; }
+      .paleta { grid-template-columns: repeat(3, 1fr); }
+      .pintar-area { gap: 10px; }
+      .abas a { font-size: 10.5px; }
     }
     @media (prefers-reduced-motion: reduce) {
       .caso, .carta { transition: none; }
@@ -489,8 +575,9 @@
       <a href="#inicio" data-tela="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3.5 7.5 12 12l8.5-4.5L12 3z"/><path d="M3.5 7.5v9L12 21v-9M20.5 7.5v9L12 21"/></svg>Início</a>
       <a href="#camadas" data-tela="camadas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3 7.5l9 4.5 9-4.5L12 3z"/><path d="m3 12 9 4.5 9-4.5"/><path d="m3 16.5 9 4.5 9-4.5"/></svg>Camadas</a>
       <a href="#cfop" data-tela="cfop"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>CFOP</a>
+      <a href="#meucubo" data-tela="meucubo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/></svg>Meu cubo</a>
       <a href="#treino" data-tela="treino"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.3"/></svg>Treino</a>
-      <a href="#crono" data-tela="crono"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M18.5 6.5l1.5-1.5"/></svg>Cronômetro</a>
+      <a href="#crono" data-tela="crono"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M9.5 2.5h5M18.5 6.5l1.5-1.5"/></svg>Tempo</a>
     </div>
   </nav>
 
@@ -500,23 +587,7 @@
         <h2 id="p-titulo"></h2>
         <button type="button" class="fechar" data-fechar aria-label="Fechar">×</button>
       </div>
-      <div class="visor" id="p-visor"></div>
-      <div class="p-info">
-        <p id="p-contador"></p>
-        <p id="p-desc" aria-live="polite"></p>
-      </div>
-      <div class="p-alg" id="p-alg"></div>
-      <div class="p-controles">
-        <button type="button" class="ctl" id="p-inicio" aria-label="Voltar ao início"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="2.6" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.3 12.75a.9.9 0 0 1 0-1.5l8.3-5.8A.9.9 0 0 1 19 6.2z"/></svg></button>
-        <button type="button" class="ctl" id="p-voltar" aria-label="Movimento anterior"><svg viewBox="0 0 24 24"><path d="M16 6.2v11.6a.9.9 0 0 1-1.4.75L6.3 12.75a.9.9 0 0 1 0-1.5l8.3-5.8A.9.9 0 0 1 16 6.2z"/></svg></button>
-        <button type="button" class="ctl grande" id="p-play" aria-label="Tocar"></button>
-        <button type="button" class="ctl" id="p-avancar" aria-label="Próximo movimento"><svg viewBox="0 0 24 24"><path d="M8 6.2v11.6a.9.9 0 0 0 1.4.75l8.3-5.8a.9.9 0 0 0 0-1.5L9.4 5.45A.9.9 0 0 0 8 6.2z"/></svg></button>
-        <button type="button" class="ctl texto" id="p-vel" aria-label="Velocidade"></button>
-      </div>
-      <div class="p-extra">
-        <label id="p-cores-linha"><input type="checkbox" id="p-cores"> Mostrar todas as cores</label>
-        <button type="button" class="link" id="p-vista">Endireitar o cubo</button>
-      </div>
+      <div id="p-tocador"></div>
       <p id="p-texto"></p>
     </div>
   </div>
@@ -524,6 +595,7 @@
   <script src="js/cubo.js"></script>
   <script src="js/conteudo.js"></script>
   <script src="js/desenho.js"></script>
+  <script src="js/resolver.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

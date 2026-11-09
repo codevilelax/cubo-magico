@@ -122,7 +122,7 @@
     };
     this.raiz.style.setProperty('--t', this.T + 'px');
     if (window.ResizeObserver) new ResizeObserver(medir).observe(caixa);
-    window.addEventListener('resize', medir);
+    else window.addEventListener('resize', medir);
     this.medir = medir;
     this.aplicarVista();
   }
@@ -190,6 +190,15 @@
   Visor.prototype.aplicarVista = function () {
     this.raiz.style.transform = 'rotateX(' + this.vista.x + 'deg) rotateY(' + this.vista.y + 'deg)';
   };
+  Visor.prototype.olhar = function (vista, suave) {
+    this.vista = Object.assign({}, vista);
+    if (suave) {
+      this.raiz.classList.add('suave');
+      clearTimeout(this.tempoSuave);
+      this.tempoSuave = setTimeout(() => this.raiz.classList.remove('suave'), 450);
+    }
+    this.aplicarVista();
+  };
   Visor.prototype.vistaPadrao = function () {
     this.vista = Object.assign({}, VISTA_PADRAO);
     this.aplicarVista();
@@ -232,148 +241,203 @@
   }
 
   // =====================================================================
+  // Tocador: cubo 3D + algoritmo + controles (usado no player e no "Meu cubo")
+  // =====================================================================
+  const ICONES = {
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+    pausa: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>',
+    inicio: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="2.6" height="14" rx="1"/><path d="M19 6.2v11.6a.9.9 0 0 1-1.4.75L9.3 12.75a.9.9 0 0 1 0-1.5l8.3-5.8A.9.9 0 0 1 19 6.2z"/></svg>',
+    voltar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 6.2v11.6a.9.9 0 0 1-1.4.75L6.3 12.75a.9.9 0 0 1 0-1.5l8.3-5.8A.9.9 0 0 1 16 6.2z"/></svg>',
+    avancar: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6.2v11.6a.9.9 0 0 0 1.4.75l8.3-5.8a.9.9 0 0 0 0-1.5L9.4 5.45A.9.9 0 0 0 8 6.2z"/></svg>',
+  };
+  const VELOCIDADES = [{ nome: '0,5×', ms: 620 }, { nome: '1×', ms: 360 }, { nome: '2×', ms: 190 }];
+  let velocidade = lerSalvo('cubo-velocidade', 1);
+
+  function Tocador(raiz) {
+    this.raiz = raiz;
+    raiz.classList.add('tocador');
+    raiz.innerHTML =
+      '<div class="visor"></div>' +
+      '<div class="p-info"><p class="t-contador"></p><p class="t-desc" aria-live="polite"></p></div>' +
+      '<div class="p-alg"></div>' +
+      '<div class="p-controles">' +
+      '<button type="button" class="ctl" data-acao="inicio" aria-label="Voltar ao início">' + ICONES.inicio + '</button>' +
+      '<button type="button" class="ctl" data-acao="voltar" aria-label="Movimento anterior">' + ICONES.voltar + '</button>' +
+      '<button type="button" class="ctl grande" data-acao="play" aria-label="Tocar"></button>' +
+      '<button type="button" class="ctl" data-acao="avancar" aria-label="Próximo movimento">' + ICONES.avancar + '</button>' +
+      '<button type="button" class="ctl texto" data-acao="vel" aria-label="Velocidade"></button>' +
+      '</div>' +
+      '<div class="p-extra"><label class="t-cores-linha"><input type="checkbox" class="t-cores"> Mostrar todas as cores</label>' +
+      '<button type="button" class="link" data-acao="vista">Endireitar o cubo</button></div>';
+    this.visor = new Visor($('.visor', raiz));
+    this.lances = [];
+    this.i = 0;
+    this.tocando = false;
+    this.ocupado = false;
+    raiz.addEventListener('click', e => {
+      const lance = e.target.closest('.lance');
+      if (lance) {
+        if (this.ocupado) return;
+        this.irPara(+lance.dataset.k);
+        this.executar(() => this.passo());
+        return;
+      }
+      const b = e.target.closest('[data-acao]');
+      if (!b) return;
+      const acao = b.dataset.acao;
+      if (acao === 'play') this.tocar();
+      else if (acao === 'avancar') { this.tocando = false; this.executar(() => this.passo()); }
+      else if (acao === 'voltar') this.voltar();
+      else if (acao === 'inicio') { if (!this.ocupado) this.irPara(0); else this.tocando = false; }
+      else if (acao === 'vel') { velocidade = (velocidade + 1) % VELOCIDADES.length; guardar('cubo-velocidade', velocidade); this.atualizar(); }
+      else if (acao === 'vista') this.visor.vistaPadrao();
+    });
+    $('.t-cores', raiz).addEventListener('change', e => {
+      this.visor.mascara = e.target.checked ? 'tudo' : this.mascara;
+      this.visor.colorir();
+    });
+  }
+
+  // opcoes: { inicio (cubo), alg, mascara, fimTexto }
+  Tocador.prototype.carregar = function (opcoes) {
+    this.tocando = false;
+    this.inicio = C.copiar(opcoes.inicio);
+    this.lances = C.ler(opcoes.alg || '');
+    this.mascara = opcoes.mascara || 'tudo';
+    this.fimTexto = opcoes.fimTexto || '';
+    this.i = 0;
+    $('.p-alg', this.raiz).innerHTML = this.lances.map((l, k) => '<button type="button" class="lance" data-k="' + k + '">' + esc(l.texto) + '</button>').join('');
+    $('.t-cores', this.raiz).checked = !!opcoes.todasCores;
+    $('.t-cores-linha', this.raiz).hidden = this.mascara === 'tudo';
+    this.visor.vistaPadrao();
+    this.visor.definir(C.copiar(this.inicio), opcoes.todasCores ? 'tudo' : this.mascara);
+    requestAnimationFrame(() => this.visor.medir());
+    this.atualizar();
+  };
+
+  Tocador.prototype.atualizar = function () {
+    const n = this.lances.length, i = this.i;
+    $$('.lance', this.raiz).forEach((b, k) => {
+      b.classList.toggle('feito', k < i - 1);
+      b.classList.toggle('atual', k === i - 1);
+    });
+    const atual = $('.lance.atual', this.raiz);
+    if (atual && atual.parentNode.scrollHeight > atual.parentNode.clientHeight) atual.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    $('.t-contador', this.raiz).textContent = i === 0 ? 'Situação inicial · ' + n + ' movimento' + (n === 1 ? '' : 's') : 'Movimento ' + i + ' de ' + n;
+    $('.t-desc', this.raiz).textContent = i === 0
+      ? 'Toque em ▶ para ver os movimentos, ou arraste o cubo para olhar de outro lado.'
+      : descrever(this.lances[i - 1]) + (i === n ? '.' + this.fimTexto : '');
+    const play = $('[data-acao="play"]', this.raiz);
+    play.innerHTML = this.tocando ? ICONES.pausa : ICONES.play;
+    play.setAttribute('aria-label', this.tocando ? 'Pausar' : (i >= n ? 'Ver de novo' : 'Tocar'));
+    $('[data-acao="voltar"]', this.raiz).disabled = i === 0;
+    $('[data-acao="avancar"]', this.raiz).disabled = i >= n;
+    $('[data-acao="vel"]', this.raiz).textContent = VELOCIDADES[velocidade].nome;
+  };
+
+  const duracao = l => VELOCIDADES[velocidade].ms * (Math.abs(l.vezes) === 2 ? 1.45 : 1);
+
+  Tocador.prototype.passo = async function () {
+    if (this.i >= this.lances.length) return;
+    const l = this.lances[this.i];
+    this.i++;
+    this.atualizar();
+    await this.visor.animar(l, duracao(l));
+  };
+
+  Tocador.prototype.voltar = function () {
+    this.tocando = false;
+    this.executar(async () => {
+      if (this.i === 0) return;
+      this.i--;
+      const l = this.lances[this.i];
+      await this.visor.animar(C.criarLance(l.base, -l.vezes), duracao(l));
+    });
+  };
+
+  Tocador.prototype.executar = async function (fn) {
+    if (this.ocupado) return;
+    this.ocupado = true;
+    try { await fn(); } finally { this.ocupado = false; this.atualizar(); }
+  };
+
+  Tocador.prototype.tocar = function () {
+    if (this.tocando) { this.tocando = false; this.atualizar(); return; }
+    if (this.ocupado) return;
+    if (this.i >= this.lances.length) this.irPara(0);
+    if (!this.lances.length) return;
+    this.tocando = true;
+    this.executar(async () => {
+      while (this.tocando && this.i < this.lances.length && this.raiz.isConnected && this.raiz.offsetParent) {
+        await this.passo();
+        if (this.tocando && this.i < this.lances.length) await new Promise(r => setTimeout(r, VELOCIDADES[velocidade].ms * 0.18));
+      }
+      this.tocando = false;
+    });
+  };
+
+  Tocador.prototype.irPara = function (k) {
+    this.tocando = false;
+    const c = C.copiar(this.inicio);
+    C.aplicar(c, this.lances.slice(0, k));
+    this.i = k;
+    this.visor.definir(c);
+    this.atualizar();
+  };
+
+  Tocador.prototype.parar = function () { this.tocando = false; };
+
+  Tocador.prototype.tecla = function (e) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); this.tocando = false; this.executar(() => this.passo()); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); this.voltar(); }
+    else if (e.key === ' ' && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.tocar(); }
+  };
+
+  // =====================================================================
   // Player (janela com o cubo e os controles)
   // =====================================================================
-  const VELOCIDADES = [{ nome: '0,5×', ms: 620 }, { nome: '1×', ms: 360 }, { nome: '2×', ms: 190 }];
   const Player = (function () {
     const raiz = $('#player');
-    const visor = new Visor($('#p-visor'));
-    let caso = null, lances = [], i = 0, tocando = false, ocupado = false;
-    let vel = lerSalvo('cubo-velocidade', 1);
-    let todasCores = false;
+    const toc = new Tocador($('#p-tocador'));
 
     function abrir(id) {
-      caso = CASOS.get(id);
+      const caso = CASOS.get(id);
       if (!caso) return;
-      lances = C.ler(caso.alg);
-      i = 0; tocando = false;
       $('#p-titulo').textContent = caso.titulo || caso.nome;
       $('#p-texto').textContent = caso.texto || '';
       $('#p-texto').hidden = !caso.texto;
-      $('#p-alg').innerHTML = lances.map((l, k) => '<button type="button" class="lance" data-k="' + k + '">' + esc(l.texto) + '</button>').join('');
-      todasCores = false;
-      $('#p-cores').checked = false;
-      $('#p-cores-linha').hidden = caso.mascara === 'tudo';
       raiz.hidden = false;
       document.body.classList.add('com-player');
-      visor.vistaPadrao();
-      visor.definir(estadoInicial(caso), caso.mascara);
-      requestAnimationFrame(() => visor.medir());
-      atualizar();
+      toc.carregar({ inicio: estadoInicial(caso), alg: caso.alg, mascara: caso.mascara, fimTexto: caso.inicio === undefined ? ' Pronto!' : '' });
       if (!history.state || !history.state.player) history.pushState({ player: true }, '');
-      $('#p-play').focus({ preventScroll: true });
+      $('[data-acao="play"]', raiz).focus({ preventScroll: true });
     }
 
     function fechar(deHistorico) {
       if (raiz.hidden) return;
-      tocando = false;
+      toc.parar();
       raiz.hidden = true;
       document.body.classList.remove('com-player');
       if (!deHistorico && history.state && history.state.player) history.back();
     }
 
-    function atualizar() {
-      const n = lances.length;
-      $$('.lance', raiz).forEach((b, k) => {
-        b.classList.toggle('feito', k < i - 1);
-        b.classList.toggle('atual', k === i - 1);
-      });
-      const atual = $('.lance.atual', raiz);
-      if (atual) atual.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      $('#p-contador').textContent = i === 0 ? 'Situação inicial · ' + n + ' movimento' + (n === 1 ? '' : 's') : 'Movimento ' + i + ' de ' + n;
-      $('#p-desc').textContent = i === 0 ? 'Toque em ▶ para ver o algoritmo, ou arraste o cubo para olhar de outro lado.' : descrever(lances[i - 1]) + (i === n && caso.inicio === undefined ? '. Pronto!' : '');
-      $('#p-play').innerHTML = tocando ? ICONES.pausa : ICONES.play;
-      $('#p-play').setAttribute('aria-label', tocando ? 'Pausar' : (i >= n ? 'Ver de novo' : 'Tocar'));
-      $('#p-voltar').disabled = i === 0;
-      $('#p-avancar').disabled = i >= n;
-      $('#p-vel').textContent = VELOCIDADES[vel].nome;
-    }
-
-    async function passo() {
-      if (i >= lances.length) return;
-      const l = lances[i];
-      const ms = VELOCIDADES[vel].ms * (Math.abs(l.vezes) === 2 ? 1.45 : 1);
-      i++;
-      atualizar();
-      await visor.animar(l, ms);
-    }
-
-    async function executar(fn) {
-      if (ocupado) return;
-      ocupado = true;
-      try { await fn(); } finally { ocupado = false; atualizar(); }
-    }
-
-    function tocar() {
-      if (tocando) { tocando = false; atualizar(); return; }
-      if (ocupado) return;
-      if (i >= lances.length) irPara(0);
-      tocando = true;
-      executar(async () => {
-        while (tocando && i < lances.length && !raiz.hidden) {
-          await passo();
-          if (tocando && i < lances.length) await new Promise(r => setTimeout(r, VELOCIDADES[vel].ms * 0.18));
-        }
-        tocando = false;
-      });
-    }
-
-    function irPara(k) {
-      tocando = false;
-      const c = estadoInicial(caso);
-      C.aplicar(c, lances.slice(0, k));
-      i = k;
-      visor.definir(c);
-      atualizar();
-    }
-
     raiz.addEventListener('click', e => {
-      if (e.target === raiz || e.target.closest('[data-fechar]')) return fechar();
-      const lance = e.target.closest('.lance');
-      if (lance && !ocupado) {
-        const k = +lance.dataset.k;
-        irPara(k);
-        executar(passo);
-      }
-    });
-    $('#p-play').addEventListener('click', tocar);
-    $('#p-avancar').addEventListener('click', () => { tocando = false; executar(passo); });
-    $('#p-voltar').addEventListener('click', () => {
-      tocando = false;
-      executar(async () => {
-        if (i === 0) return;
-        i--;
-        const l = lances[i];
-        await visor.animar(C.criarLance(l.base, -l.vezes), VELOCIDADES[vel].ms * (Math.abs(l.vezes) === 2 ? 1.45 : 1));
-      });
-    });
-    $('#p-inicio').addEventListener('click', () => { if (!ocupado) irPara(0); else tocando = false; });
-    $('#p-vel').addEventListener('click', () => { vel = (vel + 1) % VELOCIDADES.length; guardar('cubo-velocidade', vel); atualizar(); });
-    $('#p-vista').addEventListener('click', () => visor.vistaPadrao());
-    $('#p-cores').addEventListener('change', e => {
-      todasCores = e.target.checked;
-      visor.mascara = todasCores ? 'tudo' : caso.mascara;
-      visor.colorir();
+      if (e.target === raiz || e.target.closest('[data-fechar]')) fechar();
     });
     window.addEventListener('popstate', () => fechar(true));
     document.addEventListener('keydown', e => {
       if (raiz.hidden) return;
       if (e.key === 'Escape') fechar();
-      else if (e.key === 'ArrowRight') { e.preventDefault(); tocando = false; executar(passo); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); $('#p-voltar').click(); }
-      else if (e.key === ' ' && e.target.tagName !== 'BUTTON') { e.preventDefault(); tocar(); }
+      else toc.tecla(e);
     });
 
-    return { abrir, fechar };
+    return { abrir, fechar, aberto: () => !raiz.hidden };
   })();
 
   // =====================================================================
   // Pedaços de HTML
   // =====================================================================
-  const ICONES = {
-    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
-    pausa: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>',
-  };
+
 
   function cartaoCaso(caso, opcoes) {
     opcoes = opcoes || {};
@@ -407,6 +471,7 @@
       '<div class="metodos">' +
       '<a class="metodo" href="#camadas" style="--cor:#16b35a"><span class="metodo-tag">Iniciante</span><strong>Método por camadas</strong><span>7 passos e 6 algoritmos curtos. Comece aqui se você nunca montou um cubo.</span></a>' +
       '<a class="metodo" href="#cfop" style="--cor:#ff8a1c"><span class="metodo-tag">Rápido</span><strong>CFOP</strong><span>O método dos speedcubers. Comece pelo 2-look (16 algoritmos) e depois vá para o completo.</span></a>' +
+      '<a class="metodo" href="#meucubo" style="--cor:#2773ff"><span class="metodo-tag">Passo a passo</span><strong>Resolver o meu cubo</strong><span>Pinte as cores do seu cubo e resolva junto com o app, um passo de cada vez.</span></a>' +
       '</div></section>' +
       '<section class="bloco">' +
       '<h2>Como ler os movimentos</h2>' +
@@ -689,9 +754,250 @@
   });
 
   // =====================================================================
+  // Meu cubo: pintar as cores e resolver junto, passo a passo
+  // =====================================================================
+  const Rs = window.Resolver;
+  const ORDEM_FACES = [
+    ['F', 'Frente', 'Olhe para a face com o centro verde, com o amarelo em cima. Pinte do jeito que você vê.'],
+    ['R', 'Direita', 'Gire o cubo para a esquerda até ver a face com o centro laranja. O amarelo continua em cima.'],
+    ['B', 'Trás', 'Gire mais uma vez para a esquerda: face com o centro azul, amarelo em cima.'],
+    ['L', 'Esquerda', 'Mais uma vez: face com o centro vermelho, amarelo em cima.'],
+    ['U', 'Cima', 'Volte com o verde na frente e incline o cubo para ver o amarelo. O verde fica embaixo, perto de você.'],
+    ['D', 'Baixo', 'Com o verde na frente, incline o cubo para ver o branco. O verde fica em cima, longe de você.'],
+  ];
+  const VISTA_FACE = { F: { x: -22, y: -24 }, R: { x: -22, y: -114 }, B: { x: -22, y: -204 }, L: { x: -22, y: 66 }, U: { x: -66, y: -24 }, D: { x: 62, y: -24 } };
+  const CORES_PALETA = ['D', 'U', 'F', 'B', 'R', 'L'];
+  const METODOS = [['camadas', 'Camadas'], ['cfop2', 'CFOP 2-look'], ['cfop', 'CFOP completo']];
+  const NOME_METODO = { camadas: 'por camadas', cfop2: 'CFOP 2-look', cfop: 'CFOP completo' };
+
+  const meu = Object.assign({ face: 'F', cor: 'D', modo: 'pintar', metodo: 'camadas', passo: 0, emb: '' }, lerSalvo('cubo-meu', {}));
+  if (!meu.pintura || !'URFDLB'.split('').every(f => Array.isArray(meu.pintura[f]) && meu.pintura[f].length === 9)) meu.pintura = Rs.pinturaVazia();
+  const salvarMeu = () => guardar('cubo-meu', meu);
+  let meuVisor = null, guiaToc = null, solucao = null, pintando = false;
+
+  function telaMeuCubo() {
+    if (meu.modo === 'resolver' && !obterSolucao().erro) return telaGuiada();
+    if (meu.modo === 'embaralhar') return telaEmbaralhar();
+    meu.modo = 'pintar';
+    return telaPintar();
+  }
+
+  function telaPintar() {
+    return '<section class="bloco"><h2>Resolver o meu cubo</h2>' +
+      '<p>Pinte aqui as cores do seu cubo e a gente resolve junto, um passo de cada vez. Você faz cada passo no seu cubo de verdade.</p>' +
+      '<p class="nota">Segure o cubo com o centro <strong>amarelo em cima</strong> e o <strong>verde na frente</strong>. Os centros já vêm pintados.</p>' +
+      '<button type="button" class="link" data-meu="embaralhar">Não quero pintar: me dê um embaralhamento para fazer no cubo montado</button></section>' +
+      '<section class="bloco pintar">' +
+      '<div class="faces-abas" role="tablist" aria-label="Faces">' + ORDEM_FACES.map(([f, nome]) => '<button type="button" class="face-aba" role="tab" data-face="' + f + '"><i style="background:' + Des.CORES[f] + '"></i>' + nome + '<small></small></button>').join('') + '</div>' +
+      '<p class="como" id="m-como"></p>' +
+      '<div class="pintar-area">' +
+      '<div class="grade-pintar" id="m-grade">' + Array.from({ length: 9 }, (_, i) => '<button type="button" class="cel" data-i="' + i + '"' + (i === 4 ? ' disabled aria-label="Centro (fixo)"' : ' aria-label="Adesivo ' + (i + 1) + '"') + '></button>').join('') + '</div>' +
+      '<div class="m-visor" id="m-visor" title="Arraste para girar"></div>' +
+      '</div>' +
+      '<div class="paleta" role="radiogroup" aria-label="Cor do pincel">' + CORES_PALETA.map(c => '<button type="button" class="cor" role="radio" data-cor="' + c + '"><i style="background:' + Des.CORES[c] + '"></i><span>' + Rs.NOME_COR[c] + '</span><small></small></button>').join('') + '</div>' +
+      '<div class="pintar-botoes"><button type="button" class="link" data-meu="limpar-face">Limpar esta face</button><button type="button" class="link" data-meu="limpar">Limpar tudo</button><button type="button" class="botao-sec" data-meu="proxima">Próxima face</button></div>' +
+      '<p class="m-erro" id="m-erro" role="alert" hidden></p>' +
+      '<button type="button" class="botao largo" data-meu="resolver">Pronto, vamos resolver</button>' +
+      '</section>';
+  }
+
+  function montarPintar() {
+    meuVisor = new Visor($('#m-visor'));
+    meuVisor.olhar(VISTA_FACE[meu.face]);
+    const grade = $('#m-grade');
+    const pintarEm = alvo => {
+      const cel = alvo && alvo.closest && alvo.closest('#m-grade .cel');
+      if (!cel || cel.disabled) return;
+      const i = +cel.dataset.i;
+      if (meu.pintura[meu.face][i] === meu.cor) return;
+      meu.pintura[meu.face][i] = meu.cor;
+      salvarMeu();
+      atualizarPintura(false);
+    };
+    grade.addEventListener('pointerdown', e => {
+      pintando = true;
+      if (grade.releasePointerCapture) try { grade.releasePointerCapture(e.pointerId); } catch (x) { /* nada */ }
+      pintarEm(e.target);
+      e.preventDefault();
+    });
+    grade.addEventListener('pointermove', e => { if (pintando) pintarEm(document.elementFromPoint(e.clientX, e.clientY)); });
+    window.addEventListener('pointerup', () => { pintando = false; });
+    atualizarPintura(true);
+  }
+
+  function contarCores() {
+    const conta = {};
+    CORES_PALETA.forEach(c => { conta[c] = 0; });
+    for (const f of 'URFDLB') for (const v of meu.pintura[f]) if (v) conta[v]++;
+    return conta;
+  }
+
+  function atualizarPintura(girar) {
+    const p = meu.pintura;
+    $$('.face-aba').forEach(b => {
+      const f = b.dataset.face, feitos = p[f].filter(Boolean).length;
+      b.setAttribute('aria-selected', String(f === meu.face));
+      b.classList.toggle('completa', feitos === 9);
+      $('small', b).textContent = feitos === 9 ? '✓' : (feitos - 1) + '/8';
+    });
+    $('#m-como').textContent = ORDEM_FACES.find(x => x[0] === meu.face)[2];
+    $$('#m-grade .cel').forEach(b => {
+      const v = p[meu.face][+b.dataset.i];
+      b.style.background = v ? Des.CORES[v] : '';
+      b.classList.toggle('vazia', !v);
+    });
+    const conta = contarCores();
+    $$('.paleta .cor').forEach(b => {
+      const c = b.dataset.cor;
+      b.setAttribute('aria-checked', String(c === meu.cor));
+      $('small', b).textContent = conta[c] + '/9';
+      b.classList.toggle('demais', conta[c] > 9);
+    });
+    $('#m-erro').hidden = true;
+    if (meuVisor) {
+      meuVisor.definir(Rs.cuboDaPintura(p), 'tudo');
+      if (girar) meuVisor.olhar(VISTA_FACE[meu.face], true);
+    }
+  }
+
+  function telaEmbaralhar() {
+    registrar({ id: 'meu-emb', nome: 'Embaralhamento', titulo: 'Embaralhamento', alg: meu.emb, inicio: '', mascara: 'tudo', texto: 'Faça estes movimentos no cubo montado, com o amarelo em cima e o verde na frente.' });
+    return '<section class="bloco"><h2>Embaralhar o cubo</h2>' +
+      '<p>Comece com o cubo montado. Segure com o <strong>amarelo em cima</strong> e o <strong>verde na frente</strong> e faça estes movimentos:</p>' +
+      '<p class="emb-grande alg">' + esc(meu.emb) + '</p>' +
+      '<div class="emb-rede">' + Des.rede(C.aplicar(C.novo(), meu.emb)) + '<p class="nota">No fim, seu cubo fica assim (amarelo em cima, verde na frente).</p></div>' +
+      '<div class="pintar-botoes"><button type="button" class="link" data-caso="meu-emb">Ver no cubo 3D</button><button type="button" class="link" data-meu="emb-outro">Outro embaralhamento</button></div>' +
+      '<button type="button" class="botao largo" data-meu="emb-pronto">Fiz, vamos resolver</button>' +
+      '<p class="centro"><button type="button" class="link" data-meu="pintar">Prefiro pintar o meu cubo</button></p></section>';
+  }
+
+  function obterSolucao() {
+    const chave = JSON.stringify(meu.pintura) + '|' + meu.metodo;
+    if (solucao && solucao.chave === chave) return solucao;
+    const lido = Rs.lerPintura(meu.pintura);
+    if (lido.erro) return { erro: lido.erro };
+    solucao = { chave, r: Rs.resolver(lido.cubo, meu.metodo), cubo: lido.cubo };
+    return solucao;
+  }
+
+  const fasesDoMetodo = () => Rs.FASES[meu.metodo === 'camadas' ? 'camadas' : 'cfop'];
+
+  function telaGuiada() {
+    return '<section class="bloco"><div class="titulo-linha"><h2>Vamos resolver</h2><button type="button" class="link" data-meu="editar">Editar cores</button></div>' +
+      '<div class="chips" role="group" aria-label="Método">' + METODOS.map(([id, nome]) => '<button type="button" class="chip" data-metodo="' + id + '" aria-pressed="' + (id === meu.metodo) + '">' + nome + '</button>').join('') + '</div>' +
+      '<ol class="fases" id="g-fases">' + fasesDoMetodo().map(([id, nome]) => '<li data-fase="' + id + '">' + esc(nome) + '</li>').join('') + '</ol>' +
+      '<p class="nota" id="g-resumo"></p></section>' +
+      '<section class="bloco guiado" id="g-passo">' +
+      '<p class="g-fase" id="g-fase"></p><h3 id="g-titulo"></h3><p id="g-texto"></p>' +
+      '<div id="g-tocador"></div>' +
+      '<div class="g-nav"><button type="button" class="botao-sec" data-meu="anterior">Voltar</button><button type="button" class="botao" data-meu="proximo" id="g-proximo">Fiz! Próximo passo</button></div>' +
+      '</section>' +
+      '<section class="bloco fim-guiado" id="g-fim" hidden><span class="fim-cubo" aria-hidden="true">' + Des.iso(C.novo(), 'tudo') + '</span><h2>Cubo resolvido!</h2><p id="g-fim-texto"></p>' +
+      '<div class="pintar-botoes"><button type="button" class="botao" data-meu="novo">Resolver outro cubo</button><button type="button" class="link" data-meu="recomecar">Ver do começo</button></div></section>';
+  }
+
+  function montarGuiada() {
+    guiaToc = new Tocador($('#g-tocador'));
+    atualizarGuiada();
+  }
+
+  function atualizarGuiada(rolar) {
+    const s = obterSolucao();
+    const passos = s.r.passos;
+    meu.passo = Math.max(0, Math.min(meu.passo, passos.length));
+    const fim = meu.passo >= passos.length;
+    $('#g-passo').hidden = fim;
+    $('#g-fim').hidden = !fim;
+    const fases = fasesDoMetodo().map(f => f[0]);
+    const faseAtual = fim ? fases.length : Math.max(0, fases.indexOf(passos[meu.passo].fase === 'fim' ? fases[fases.length - 1] : passos[meu.passo].fase));
+    $$('#g-fases li').forEach((li, k) => {
+      li.className = k < faseAtual ? 'feita' : k === faseAtual ? 'atual' : '';
+    });
+    $('#g-resumo').textContent = passos.length
+      ? passos.length + ' passos · ' + s.r.total + ' movimentos pelo método ' + NOME_METODO[meu.metodo]
+      : 'Seu cubo já está montado.';
+    if (!fim) {
+      const p = passos[meu.passo];
+      const nomeFase = (fasesDoMetodo().find(f => f[0] === p.fase) || [0, 'Último ajuste'])[1];
+      $('#g-fase').textContent = 'Passo ' + (meu.passo + 1) + ' de ' + passos.length + ' · ' + nomeFase;
+      $('#g-titulo').textContent = p.titulo;
+      $('#g-texto').textContent = p.texto;
+      guiaToc.carregar({ inicio: p.inicio, alg: p.alg, mascara: p.mascara, todasCores: true, fimTexto: ' Agora faça no seu cubo e toque em "Fiz!".' });
+      $('[data-meu="anterior"]').disabled = meu.passo === 0;
+      $('#g-proximo').textContent = meu.passo === passos.length - 1 ? 'Fiz! Terminar' : 'Fiz! Próximo passo';
+      if (rolar) $('#g-passo').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } else {
+      $('#g-fim-texto').textContent = passos.length
+        ? 'Foram ' + passos.length + ' passos e ' + s.r.total + ' movimentos pelo método ' + NOME_METODO[meu.metodo] + '. Que tal embaralhar e tentar sozinho agora?'
+        : 'Seu cubo já estava montado. Embaralhe e pinte de novo para resolver junto.';
+      if (rolar) $('#g-fim').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+    salvarMeu();
+  }
+
+  function acaoMeu(acao) {
+    if (acao === 'resolver') {
+      const lido = Rs.lerPintura(meu.pintura);
+      if (lido.erro) {
+        const el = $('#m-erro');
+        el.textContent = lido.erro;
+        el.hidden = false;
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+      meu.modo = 'resolver';
+      meu.passo = 0;
+    } else if (acao === 'limpar-face') {
+      meu.pintura[meu.face] = meu.pintura[meu.face].map((v, i) => (i === 4 ? v : null));
+      salvarMeu();
+      return atualizarPintura(false);
+    } else if (acao === 'limpar') {
+      if (!confirm('Apagar todas as cores pintadas?')) return;
+      meu.pintura = Rs.pinturaVazia();
+      salvarMeu();
+      return atualizarPintura(false);
+    } else if (acao === 'proxima') {
+      const i = ORDEM_FACES.findIndex(x => x[0] === meu.face);
+      meu.face = ORDEM_FACES[(i + 1) % ORDEM_FACES.length][0];
+      salvarMeu();
+      return atualizarPintura(true);
+    } else if (acao === 'embaralhar' || acao === 'emb-outro') {
+      meu.emb = C.embaralhamento(20);
+      meu.modo = 'embaralhar';
+    } else if (acao === 'emb-pronto') {
+      meu.pintura = Rs.pinturaDoCubo(C.aplicar(C.novo(), meu.emb));
+      meu.modo = 'resolver';
+      meu.passo = 0;
+    } else if (acao === 'pintar' || acao === 'editar') {
+      meu.modo = 'pintar';
+    } else if (acao === 'anterior' || acao === 'proximo') {
+      meu.passo += acao === 'proximo' ? 1 : -1;
+      return atualizarGuiada(true);
+    } else if (acao === 'recomecar') {
+      meu.passo = 0;
+      return atualizarGuiada(true);
+    } else if (acao === 'novo') {
+      meu.pintura = Rs.pinturaVazia();
+      meu.face = 'F';
+      meu.modo = 'pintar';
+      meu.passo = 0;
+    }
+    salvarMeu();
+    desenharTela(true);
+  }
+
+  function montarTela(tela) {
+    meuVisor = null;
+    guiaToc = null;
+    if (tela !== 'meucubo') return;
+    if ($('#m-grade')) montarPintar();
+    else if ($('#g-tocador')) montarGuiada();
+  }
+
+  // =====================================================================
   // Navegação
   // =====================================================================
-  const TELAS = { inicio: telaInicio, camadas: telaCamadas, cfop: telaCfop, treino: telaTreino, crono: telaCrono };
+  const TELAS = { inicio: telaInicio, camadas: telaCamadas, cfop: telaCfop, meucubo: telaMeuCubo, treino: telaTreino, crono: telaCrono };
   function rota() {
     const [tela, sub] = location.hash.replace(/^#/, '').split('/');
     return { tela: TELAS[tela] ? tela : 'inicio', sub };
@@ -704,7 +1010,8 @@
     main.innerHTML = tela === 'cfop' ? telaCfop(sub) : TELAS[tela]();
     main.dataset.tela = tela;
     $$('.abas a').forEach(a => a.setAttribute('aria-current', a.dataset.tela === tela ? 'page' : 'false'));
-    document.title = { inicio: 'Cubo Mágico', camadas: 'Método por camadas · Cubo Mágico', cfop: 'CFOP · Cubo Mágico', treino: 'Treino · Cubo Mágico', crono: 'Cronômetro · Cubo Mágico' }[tela];
+    document.title = { inicio: 'Cubo Mágico', camadas: 'Método por camadas · Cubo Mágico', cfop: 'CFOP · Cubo Mágico', meucubo: 'Meu cubo · Cubo Mágico', treino: 'Treino · Cubo Mágico', crono: 'Cronômetro · Cubo Mágico' }[tela];
+    montarTela(tela);
     if (tela === 'camadas' && sub && rolarParaTopo) {
       const alvo = $('#passo-' + sub);
       if (alvo) { alvo.scrollIntoView({ block: 'start' }); return; }
@@ -738,7 +1045,15 @@
       desenharTela();
       return;
     }
-    if (e.target.closest('#apagar-todos') && confirm('Apagar todos os tempos?')) { tempos = []; guardar('cubo-tempos', tempos); desenharTela(); }
+    if (e.target.closest('#apagar-todos') && confirm('Apagar todos os tempos?')) { tempos = []; guardar('cubo-tempos', tempos); desenharTela(); return; }
+    const face = e.target.closest('[data-face]');
+    if (face) { meu.face = face.dataset.face; salvarMeu(); atualizarPintura(true); return; }
+    const cor = e.target.closest('[data-cor]');
+    if (cor) { meu.cor = cor.dataset.cor; salvarMeu(); atualizarPintura(false); return; }
+    const metodo = e.target.closest('[data-metodo]');
+    if (metodo) { meu.metodo = metodo.dataset.metodo; meu.passo = 0; salvarMeu(); desenharTela(); return; }
+    const m = e.target.closest('[data-meu]');
+    if (m) acaoMeu(m.dataset.meu);
   });
 
   $('#logo').innerHTML = Des.iso(C.aplicar(C.novo(), "R U R' U'"), 'tudo');
